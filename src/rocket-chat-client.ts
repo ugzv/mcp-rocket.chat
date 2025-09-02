@@ -1,4 +1,8 @@
 import fetch from 'node-fetch';
+import FormData from 'form-data';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as mimeTypes from 'mime-types';
 
 export interface RocketChatConfig {
   baseUrl: string;
@@ -495,5 +499,157 @@ export class RocketChatClient {
   async getStatistics() {
     const result = await this.request('/statistics');
     return result;
+  }
+
+  // File upload and download functionality
+  async uploadFile(roomId: string, filePath: string, description?: string, threadId?: string) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    const form = new FormData();
+    const fileName = path.basename(filePath);
+    const mimeType = mimeTypes.lookup(filePath) || 'application/octet-stream';
+    
+    form.append('file', fs.createReadStream(filePath), {
+      filename: fileName,
+      contentType: mimeType
+    });
+    
+    if (description) {
+      form.append('msg', description);
+      form.append('description', description);
+    }
+    
+    if (threadId) {
+      form.append('tmid', threadId);
+    }
+
+    const url = `${this.baseUrl}/api/v1/rooms.upload/${roomId}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-Auth-Token': this.authToken,
+        'X-User-Id': this.userId,
+        ...form.getHeaders()
+      },
+      body: form
+    });
+
+    const data = await response.json() as any;
+
+    if (!response.ok) {
+      throw new Error(data.error || `Upload failed: ${response.statusText}`);
+    }
+
+    if (!data.success) {
+      throw new Error(data.error || 'Upload was not successful');
+    }
+
+    return data;
+  }
+
+  async downloadFile(fileId: string, fileName: string, savePath?: string): Promise<{
+    success: boolean;
+    size: number;
+    path?: string;
+    data?: string;
+    mimeType?: string;
+  }> {
+    const url = `${this.baseUrl}/file-upload/${fileId}/${fileName}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'X-Auth-Token': this.authToken,
+        'X-User-Id': this.userId
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.statusText}`);
+    }
+
+    const buffer = await response.buffer();
+
+    if (savePath) {
+      // Save to file system
+      const dir = path.dirname(savePath);
+      
+      // Ensure directory exists
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      fs.writeFileSync(savePath, buffer);
+      return {
+        success: true,
+        path: savePath,
+        size: buffer.length
+      };
+    } else {
+      // Return as base64
+      return {
+        success: true,
+        data: buffer.toString('base64'),
+        size: buffer.length,
+        mimeType: response.headers.get('content-type') || 'application/octet-stream'
+      };
+    }
+  }
+
+  async deleteFile(fileId: string) {
+    return this.request('/rooms.deleteFile', {
+      method: 'POST',
+      body: JSON.stringify({ fileId })
+    });
+  }
+
+  async validateFileType(filePath: string, allowedTypes?: string[], maxSize?: number) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    const stats = fs.statSync(filePath);
+    const mimeType = mimeTypes.lookup(filePath);
+    
+    if (!mimeType) {
+      throw new Error('Unable to determine file type');
+    }
+
+    // Check allowed types
+    if (allowedTypes && !allowedTypes.includes(mimeType)) {
+      throw new Error(`File type ${mimeType} not allowed. Allowed types: ${allowedTypes.join(', ')}`);
+    }
+
+    // Check file size (default 100MB)
+    const defaultMaxSize = 100 * 1024 * 1024; // 100MB
+    const sizeLimit = maxSize || defaultMaxSize;
+    
+    if (stats.size > sizeLimit) {
+      throw new Error(`File size (${stats.size} bytes) exceeds maximum of ${sizeLimit} bytes`);
+    }
+
+    return {
+      valid: true,
+      size: stats.size,
+      mimeType,
+      fileName: path.basename(filePath)
+    };
+  }
+
+  async sendMessageWithAttachment(channel: string, text: string, filePath: string, threadId?: string) {
+    // Get room ID first
+    const roomInfo = await this.getRoomInfo(channel);
+    const roomId = roomInfo._id;
+
+    // Upload file
+    const uploadResult = await this.uploadFile(roomId, filePath, text, threadId);
+    
+    return {
+      success: true,
+      message: uploadResult.message,
+      file: uploadResult.message.file
+    };
   }
 }

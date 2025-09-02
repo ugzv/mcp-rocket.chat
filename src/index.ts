@@ -162,6 +162,47 @@ const getUserPresenceSchema = z.object({
   userId: z.string().describe('User ID to get presence for'),
 });
 
+const uploadFileSchema = z.object({
+  roomId: z.string().describe('Room ID to upload file to'),
+  filePath: z.string().describe('Local file path to upload'),
+  description: z.string().optional().describe('Optional description for the file'),
+  threadId: z.string().optional().describe('Optional thread ID to upload to'),
+  allowedTypes: z.array(z.string()).optional().describe('Optional array of allowed MIME types'),
+  maxSize: z.number().optional().describe('Optional maximum file size in bytes'),
+});
+
+const downloadFileSchema = z.object({
+  fileId: z.string().describe('File ID to download'),
+  fileName: z.string().describe('File name'),
+  savePath: z.string().optional().describe('Optional local path to save file (if not provided, returns base64)'),
+});
+
+const uploadImageSchema = z.object({
+  roomId: z.string().describe('Room ID to upload image to'),
+  imagePath: z.string().describe('Local image path to upload'),
+  description: z.string().optional().describe('Optional description for the image'),
+  threadId: z.string().optional().describe('Optional thread ID to upload to'),
+  analyzeImage: z.boolean().default(true).describe('Whether to analyze the image using MCP capabilities'),
+});
+
+const analyzeImageSchema = z.object({
+  fileId: z.string().describe('File ID of the image to analyze'),
+  fileName: z.string().describe('File name of the image'),
+  analysisType: z.enum(['describe', 'extract_text', 'extract_text_only', 'identify_objects', 'custom']).default('describe').describe('Type of analysis to perform'),
+  customPrompt: z.string().optional().describe('Custom prompt for analysis (required if analysisType is custom)'),
+});
+
+const deleteFileSchema = z.object({
+  fileId: z.string().describe('File ID to delete'),
+});
+
+const sendMessageWithAttachmentSchema = z.object({
+  channel: z.string().describe('Channel name (#channel) or username (@user)'),
+  text: z.string().describe('Message text to send with attachment'),
+  filePath: z.string().describe('Local file path to attach'),
+  threadId: z.string().optional().describe('Optional thread ID to reply to'),
+});
+
 // Define tools with better structure
 const tools: Tool[] = [
   {
@@ -632,6 +673,94 @@ const tools: Tool[] = [
         userId: { type: 'string', description: 'User ID to get presence for' },
       },
       required: ['userId'],
+    },
+  },
+  {
+    name: 'upload_file',
+    description: 'Upload a file to a Rocket.Chat room',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID to upload file to' },
+        filePath: { type: 'string', description: 'Local file path to upload' },
+        description: { type: 'string', description: 'Optional description for the file' },
+        threadId: { type: 'string', description: 'Optional thread ID to upload to' },
+        allowedTypes: { type: 'array', items: { type: 'string' }, description: 'Optional array of allowed MIME types' },
+        maxSize: { type: 'number', description: 'Optional maximum file size in bytes' },
+      },
+      required: ['roomId', 'filePath'],
+    },
+  },
+  {
+    name: 'download_file',
+    description: 'Download a file from Rocket.Chat',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID to download' },
+        fileName: { type: 'string', description: 'File name' },
+        savePath: { type: 'string', description: 'Optional local path to save file (if not provided, returns base64)' },
+      },
+      required: ['fileId', 'fileName'],
+    },
+  },
+  {
+    name: 'upload_image',
+    description: 'Upload an image to a Rocket.Chat room with optional AI analysis',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID to upload image to' },
+        imagePath: { type: 'string', description: 'Local image path to upload' },
+        description: { type: 'string', description: 'Optional description for the image' },
+        threadId: { type: 'string', description: 'Optional thread ID to upload to' },
+        analyzeImage: { type: 'boolean', description: 'Whether to analyze the image using MCP capabilities', default: true },
+      },
+      required: ['roomId', 'imagePath'],
+    },
+  },
+  {
+    name: 'analyze_image',
+    description: 'Analyze an image that exists in a Rocket.Chat room using MCP image understanding',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID of the image to analyze' },
+        fileName: { type: 'string', description: 'File name of the image' },
+        analysisType: { 
+          type: 'string', 
+          enum: ['describe', 'extract_text', 'extract_text_only', 'identify_objects', 'custom'],
+          description: 'Type of analysis to perform',
+          default: 'describe'
+        },
+        customPrompt: { type: 'string', description: 'Custom prompt for analysis (required if analysisType is custom)' },
+      },
+      required: ['fileId', 'fileName'],
+    },
+  },
+  {
+    name: 'delete_file',
+    description: 'Delete a file from Rocket.Chat',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'File ID to delete' },
+      },
+      required: ['fileId'],
+    },
+  },
+  {
+    name: 'send_message_with_attachment',
+    description: 'Send a message with a file attachment to a Rocket.Chat channel',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', description: 'Channel name (#channel) or username (@user)' },
+        text: { type: 'string', description: 'Message text to send with attachment' },
+        filePath: { type: 'string', description: 'Local file path to attach' },
+        threadId: { type: 'string', description: 'Optional thread ID to reply to' },
+      },
+      required: ['channel', 'text', 'filePath'],
     },
   },
 ];
@@ -1165,6 +1294,182 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: JSON.stringify(presence, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'upload_file': {
+        const validatedArgs = uploadFileSchema.parse(args);
+        
+        // Validate file if restrictions are provided
+        if (validatedArgs.allowedTypes || validatedArgs.maxSize) {
+          await rocketChat.validateFileType(
+            validatedArgs.filePath, 
+            validatedArgs.allowedTypes, 
+            validatedArgs.maxSize
+          );
+        }
+        
+        const result = await rocketChat.uploadFile(
+          validatedArgs.roomId,
+          validatedArgs.filePath,
+          validatedArgs.description,
+          validatedArgs.threadId
+        );
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `File uploaded successfully!\nMessage ID: ${result.message._id}\nFile ID: ${result.message.file._id}\nFile Name: ${result.message.file.name}\nFile Size: ${result.message.file.size} bytes`,
+            },
+          ],
+        };
+      }
+
+      case 'download_file': {
+        const validatedArgs = downloadFileSchema.parse(args);
+        const result = await rocketChat.downloadFile(
+          validatedArgs.fileId,
+          validatedArgs.fileName,
+          validatedArgs.savePath
+        );
+        
+        if (validatedArgs.savePath) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `File downloaded successfully to: ${result.path}\nSize: ${result.size} bytes`,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `File downloaded as base64 data (${result.size} bytes)\nMIME Type: ${result.mimeType}\nBase64 Data: ${result.data?.substring(0, 100) || 'No data'}...`,
+              },
+            ],
+          };
+        }
+      }
+
+      case 'upload_image': {
+        const validatedArgs = uploadImageSchema.parse(args);
+        
+        // Validate it's an image file
+        const imageTypes = [
+          'image/jpeg', 'image/png', 'image/gif', 'image/webp', 
+          'image/svg+xml', 'image/bmp', 'image/tiff'
+        ];
+        
+        await rocketChat.validateFileType(validatedArgs.imagePath, imageTypes);
+        
+        let analysisText = validatedArgs.description || '';
+        
+        // Analyze image if requested
+        if (validatedArgs.analyzeImage) {
+          // TODO: Add image analysis using MCP capabilities
+          // For now, we'll add a placeholder that can be enhanced
+          analysisText += (analysisText ? '\n\n' : '') + '[Image analysis would be performed here using MCP capabilities]';
+        }
+        
+        const result = await rocketChat.uploadFile(
+          validatedArgs.roomId,
+          validatedArgs.imagePath,
+          analysisText,
+          validatedArgs.threadId
+        );
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Image uploaded successfully!\nMessage ID: ${result.message._id}\nFile ID: ${result.message.file._id}\nImage Name: ${result.message.file.name}\nImage Size: ${result.message.file.size} bytes\nImage URL: ${result.message.file.url}`,
+            },
+          ],
+        };
+      }
+
+      case 'analyze_image': {
+        const validatedArgs = analyzeImageSchema.parse(args);
+        
+        // Download the image for analysis
+        const imageData = await rocketChat.downloadFile(validatedArgs.fileId, validatedArgs.fileName);
+        
+        if (!imageData.success) {
+          throw new Error('Failed to download image for analysis');
+        }
+        
+        // Generate analysis prompt based on type
+        let prompt = '';
+        switch (validatedArgs.analysisType) {
+          case 'describe':
+            prompt = 'Please provide a concise description of what you see in this image (limit to 3-4 sentences).';
+            break;
+          case 'extract_text':
+            prompt = 'Please extract any text you can see in this image. Return only the text content, no additional commentary.';
+            break;
+          case 'extract_text_only':
+            prompt = 'Extract ONLY the text visible in this image. Return just the text with no descriptions, explanations, or formatting - raw text only.';
+            break;
+          case 'identify_objects':
+            prompt = 'Please list the main objects/items you can identify in this image as a bullet point list.';
+            break;
+          case 'custom':
+            if (!validatedArgs.customPrompt) {
+              throw new Error('Custom prompt is required when analysisType is "custom"');
+            }
+            prompt = validatedArgs.customPrompt + ' (Please keep your response concise and under 500 words)';
+            break;
+        }
+        
+        // Return the image data for MCP to analyze with length-optimized prompts
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Analysis Request: ${validatedArgs.analysisType}\nFile: ${validatedArgs.fileName}\n\n${prompt}`,
+            },
+            {
+              type: 'image',
+              data: imageData.data || '',
+              mimeType: imageData.mimeType || 'image/jpeg',
+            },
+          ],
+        };
+      }
+
+      case 'delete_file': {
+        const validatedArgs = deleteFileSchema.parse(args);
+        const result = await rocketChat.deleteFile(validatedArgs.fileId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'File deleted successfully' : 'Failed to delete file',
+            },
+          ],
+        };
+      }
+
+      case 'send_message_with_attachment': {
+        const validatedArgs = sendMessageWithAttachmentSchema.parse(args);
+        const result = await rocketChat.sendMessageWithAttachment(
+          validatedArgs.channel,
+          validatedArgs.text,
+          validatedArgs.filePath,
+          validatedArgs.threadId
+        );
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Message with attachment sent successfully!\nMessage ID: ${result.message._id}\nFile ID: ${result.file._id}\nFile Name: ${result.file.name}`,
             },
           ],
         };

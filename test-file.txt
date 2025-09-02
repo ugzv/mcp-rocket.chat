@@ -1,0 +1,9 @@
+This is a test file for the Rocket.Chat MCP server file upload functionality.
+
+Features tested:
+- File upload
+- File download 
+- File validation
+- MCP integration
+
+Created at: 2025-09-02

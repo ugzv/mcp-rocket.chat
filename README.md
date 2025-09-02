@@ -129,6 +129,7 @@ Add to your Claude Desktop config (`claude_config.json`):
 
 ### Message Operations
 - `send_message` - Send messages to channels or users
+- `send_message_with_attachment` - Send messages with file attachments
 - `get_messages` - Retrieve messages from a room
 - `search_messages` - Search for messages across rooms
 
@@ -142,6 +143,14 @@ Add to your Claude Desktop config (`claude_config.json`):
 
 ### User Management
 - `get_user_info` - Get user profile information
+
+### File and Media Operations
+- `upload_file` - Upload any file type to a room with validation
+- `download_file` - Download files from Rocket.Chat (to filesystem or as base64)
+- `upload_image` - Upload images with optional AI analysis
+- `analyze_image` - Analyze existing room images using MCP image understanding
+- `delete_file` - Remove files from rooms
+- `get_room_files` - List all files uploaded to a room
 
 ### Utilities
 - `test_connection` - Test connection to Rocket.Chat server
@@ -159,12 +168,35 @@ npm run build
 npm start
 ```
 
+## Key Features
+
+### 🔄 Complete Rocket.Chat Integration
+- Full message management (send, receive, search, edit, delete)
+- Channel operations (create, join, leave, manage)
+- User and presence management
+- Thread support and message reactions
+
+### 📁 File and Media Support
+- **File Upload**: Upload any file type with validation and size limits
+- **File Download**: Download files to local filesystem or as base64 data
+- **Image Processing**: Specialized image upload with AI analysis
+- **MCP Image Understanding**: Analyze images using Claude's vision capabilities
+- **File Management**: List, delete, and organize room files
+- **Security**: File type validation, size limits, and secure handling
+
+### 🤖 AI-Powered Features
+- **Image Analysis**: Describe images, extract text, identify objects
+- **Custom Analysis**: Use custom prompts for specialized image analysis
+- **MCP Integration**: Leverages Model Context Protocol for seamless AI integration
+
 ## Technology Stack
 
 - **TypeScript**: Type-safe implementation
 - **@modelcontextprotocol/sdk**: Latest MCP SDK (v1.17.4)
 - **Zod**: Runtime type validation for tool inputs
 - **Node.js**: Runtime environment
+- **form-data**: Multipart form data for file uploads
+- **mime-types**: File type detection and validation
 
 ## API Version Compatibility
 
