@@ -12,6 +12,209 @@ import { RocketChatClient } from './rocket-chat-client.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
+// Response formatting helpers to reduce context window usage
+class ResponseFormatter {
+  static formatMessage(msg: any): string {
+    const timestamp = new Date(msg.ts).toLocaleString();
+    const user = msg.u ? `${msg.u.name || msg.u.username}` : 'Unknown';
+    const text = msg.msg || '[No text content]';
+    
+    // Handle file attachments
+    if (msg.file) {
+      return `[${timestamp}] ${user}: 📎 ${msg.file.name || 'File'} (${msg.file.type || 'unknown type'})${text ? ` - ${text}` : ''}`;
+    }
+    
+    return `[${timestamp}] ${user}: ${text}`;
+  }
+
+  static formatMessages(messages: any[], maxCount: number = 10): string {
+    if (!messages || messages.length === 0) {
+      return 'No messages found.';
+    }
+
+    const displayMessages = messages.slice(0, maxCount);
+    const truncated = messages.length > maxCount;
+    
+    const formatted = displayMessages.map(msg => this.formatMessage(msg)).join('\n');
+    
+    if (truncated) {
+      return `${formatted}\n\n... and ${messages.length - maxCount} more messages (showing first ${maxCount})`;
+    }
+    
+    return formatted;
+  }
+
+  static formatSearchResults(result: any): string {
+    const { query, total, messages, filters } = result;
+    
+    let output = `Search Results for: "${query}"\n`;
+    output += `Found: ${total} messages\n`;
+    
+    if (filters && Object.keys(filters).some(k => filters[k])) {
+      const activeFilters = Object.entries(filters)
+        .filter(([_, value]) => value)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
+      output += `Filters: ${activeFilters}\n`;
+    }
+    
+    output += '\n' + this.formatMessages(messages || [], 5);
+    
+    return output;
+  }
+
+  static formatRoom(room: any): string {
+    const name = room.name || room.fname || 'Unnamed Room';
+    const type = room.t === 'c' ? 'Channel' : room.t === 'p' ? 'Private Group' : room.t === 'd' ? 'Direct Message' : 'Room';
+    const members = room.usersCount || room.msgs || 'Unknown';
+    
+    return `${type}: ${name} (${members} ${typeof members === 'number' && members === 1 ? 'member' : 'members'})`;
+  }
+
+  static formatUser(user: any): string {
+    const name = user.name || user.username || 'Unknown User';
+    const username = user.username ? `@${user.username}` : '';
+    const status = user.status ? `(${user.status})` : '';
+    
+    return `${name} ${username} ${status}`.trim();
+  }
+
+  static formatGlobalSearchResults(result: any): string {
+    const { query, totals, results } = result;
+    
+    let output = `Global Search: "${query}"\n`;
+    output += `Results: ${totals.messages} messages, ${totals.rooms} rooms, ${totals.users} users\n\n`;
+    
+    if (results.messages?.length > 0) {
+      output += `📝 Messages (${totals.messages}):\n`;
+      output += this.formatMessages(results.messages, 3) + '\n\n';
+    }
+    
+    if (results.rooms?.length > 0) {
+      output += `🏠 Rooms (${totals.rooms}):\n`;
+      output += results.rooms.slice(0, 5).map((room: any) => `• ${this.formatRoom(room)}`).join('\n') + '\n\n';
+    }
+    
+    if (results.users?.length > 0) {
+      output += `👤 Users (${totals.users}):\n`;
+      output += results.users.slice(0, 5).map((user: any) => `• ${this.formatUser(user)}`).join('\n') + '\n';
+    }
+    
+    return output;
+  }
+
+  static formatAnalytics(analytics: any): string {
+    if (!analytics.success) {
+      return `Analytics Error: ${analytics.error}`;
+    }
+
+    let output = `📊 Analytics Summary\n`;
+    
+    if (analytics.metrics?.counters) {
+      const counters = analytics.metrics.counters;
+      output += `Room Stats: ${counters.joined || 0} members, ${counters.msgs || 0} messages, ${counters.unreads || 0} unread\n`;
+    }
+    
+    if (analytics.metrics?.messages) {
+      const msgs = analytics.metrics.messages;
+      output += `Messages: ${msgs.total} total, avg length: ${msgs.averageLength} chars\n`;
+      
+      if (msgs.mostActive) {
+        output += `Most active: ${msgs.mostActive.name || msgs.mostActive.username} (${msgs.mostActive.count} messages)\n`;
+      }
+    }
+    
+    if (analytics.metrics?.files) {
+      const files = analytics.metrics.files;
+      output += `Files: ${files.total} total, ${Math.round(files.totalSize / 1024 / 1024)}MB storage\n`;
+      
+      const topTypes = Object.entries(files.byType)
+        .sort(([,a]: any, [,b]: any) => b - a)
+        .slice(0, 3)
+        .map(([type, count]) => `${type}: ${count}`)
+        .join(', ');
+      
+      if (topTypes) {
+        output += `Top file types: ${topTypes}\n`;
+      }
+    }
+    
+    if (analytics.metrics?.members) {
+      const members = analytics.metrics.members;
+      output += `Members: ${members.total} total, ${members.joinedRecently} joined recently\n`;
+      
+      const statusCounts = Object.entries(members.byStatus)
+        .filter(([,count]: any) => count > 0)
+        .map(([status, count]) => `${status}: ${count}`)
+        .join(', ');
+      
+      if (statusCounts) {
+        output += `Status: ${statusCounts}\n`;
+      }
+    }
+    
+    return output;
+  }
+
+  static formatUserActivity(activity: any): string {
+    if (!activity.success) {
+      return `User Activity Error: ${activity.error}`;
+    }
+
+    let output = `👤 User Activity: ${activity.user?.name || activity.userId}\n`;
+    
+    const metrics = activity.metrics;
+    if (metrics) {
+      output += `Total Messages: ${metrics.totalMessages}\n`;
+      output += `Active Rooms: ${metrics.activeRooms?.length || 0}\n`;
+      
+      if (metrics.mostActiveRoom) {
+        output += `Most Active Room: ${metrics.mostActiveRoom.roomName} (${metrics.mostActiveRoom.messageCount} messages)\n`;
+      }
+      
+      if (metrics.messageTypes) {
+        const types = metrics.messageTypes;
+        output += `Message Types: ${types.text} text, ${types.files} files\n`;
+      }
+      
+      // Show peak activity hours
+      if (metrics.timeDistribution) {
+        const hourEntries = Object.entries(metrics.timeDistribution) as [string, number][];
+        if (hourEntries.length > 0) {
+          const peakHour = hourEntries.reduce((prev, current) => prev[1] > current[1] ? prev : current);
+          output += `Peak Activity: ${peakHour[1]} messages at ${peakHour[0]}:00\n`;
+        }
+      }
+    }
+    
+    return output;
+  }
+
+  static formatFileList(files: any[], maxCount: number = 10): string {
+    if (!files || files.length === 0) {
+      return 'No files found.';
+    }
+
+    const displayFiles = files.slice(0, maxCount);
+    const truncated = files.length > maxCount;
+    
+    const formatted = displayFiles.map(file => {
+      const name = file.name || 'Unknown File';
+      const size = file.size ? `${Math.round(file.size / 1024)}KB` : 'Unknown size';
+      const date = file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : 'Unknown date';
+      const user = file.userId || 'Unknown user';
+      
+      return `📎 ${name} (${size}) - uploaded ${date} by ${user}`;
+    }).join('\n');
+    
+    if (truncated) {
+      return `${formatted}\n\n... and ${files.length - maxCount} more files (showing first ${maxCount})`;
+    }
+    
+    return formatted;
+  }
+}
+
 dotenv.config();
 
 const server = new Server(
@@ -950,7 +1153,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(messages, null, 2),
+              text: ResponseFormatter.formatMessages(messages, 15),
             },
           ],
         };
@@ -967,7 +1170,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(messages, null, 2),
+              text: ResponseFormatter.formatMessages(messages, 15),
             },
           ],
         };
@@ -984,7 +1187,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(searchResults, null, 2),
+              text: ResponseFormatter.formatMessages(searchResults, 10),
             },
           ],
         };
@@ -1373,7 +1576,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(files, null, 2),
+              text: ResponseFormatter.formatFileList(files, 15),
             },
           ],
         };
@@ -1628,7 +1831,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Advanced Search Results:\nQuery: "${validatedArgs.query}"\nFound: ${result.total} messages\nFilters Applied: ${JSON.stringify(result.filters, null, 2)}\n\nResults:\n${JSON.stringify(result.messages, null, 2)}`,
+              text: ResponseFormatter.formatSearchResults(result),
             },
           ],
         };
@@ -1642,18 +1845,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit: validatedArgs.limit
         });
 
-        const summary = `Global Search Results for: "${validatedArgs.query}"\n` +
-                       `Search Type: ${validatedArgs.searchType}\n\n` +
-                       `Results Found:\n` +
-                       `- Messages: ${result.totals.messages}\n` +
-                       `- Rooms: ${result.totals.rooms}\n` +
-                       `- Users: ${result.totals.users}\n\n`;
-
         return {
           content: [
             {
               type: 'text',
-              text: summary + JSON.stringify(result, null, 2),
+              text: ResponseFormatter.formatGlobalSearchResults(result),
             },
           ],
         };
@@ -1682,14 +1878,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeMembers: validatedArgs.includeMembers
         });
 
-        const summary = `Room Analytics for: ${validatedArgs.roomId}\n` +
-                       `Period: ${validatedArgs.dateFrom || 'All time'} to ${validatedArgs.dateTo || 'Now'}\n\n`;
-
         return {
           content: [
             {
               type: 'text',
-              text: summary + JSON.stringify(result, null, 2),
+              text: ResponseFormatter.formatAnalytics(result),
             },
           ],
         };
@@ -1703,14 +1896,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           includeRooms: validatedArgs.includeRooms
         });
 
-        const summary = `User Activity Summary for: ${validatedArgs.userId}\n` +
-                       `Period: ${validatedArgs.dateFrom || 'All time'} to ${validatedArgs.dateTo || 'Now'}\n\n`;
-
         return {
           content: [
             {
               type: 'text',
-              text: summary + JSON.stringify(result, null, 2),
+              text: ResponseFormatter.formatUserActivity(result),
             },
           ],
         };
