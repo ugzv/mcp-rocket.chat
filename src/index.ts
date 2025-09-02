@@ -71,6 +71,76 @@ class ResponseFormatter {
     return `${type}: ${name} (${members} ${typeof members === 'number' && members === 1 ? 'member' : 'members'})`;
   }
 
+  static formatChannelList(channels: any[], maxCount: number = 20): string {
+    if (!channels || channels.length === 0) {
+      return 'No channels found.';
+    }
+
+    const displayChannels = channels.slice(0, maxCount);
+    const truncated = channels.length > maxCount;
+    
+    const formatted = displayChannels.map(channel => {
+      const name = channel.fname || channel.name || 'Unnamed Channel';
+      const type = channel.t === 'c' ? '🏢' : channel.t === 'p' ? '🔒' : channel.t === 'd' ? '👤' : '📁';
+      const members = channel.usersCount || 0;
+      const messages = channel.msgs || 0;
+      const topic = channel.topic ? ` - ${channel.topic.substring(0, 50)}${channel.topic.length > 50 ? '...' : ''}` : '';
+      const lastActivity = channel.lastMessage?.ts ? 
+        ` (last: ${new Date(channel.lastMessage.ts).toLocaleDateString()})` : '';
+      
+      return `${type} ${name} | ${members} members, ${messages} msgs${topic}${lastActivity}`;
+    }).join('\n');
+    
+    if (truncated) {
+      return `${formatted}\n\n... and ${channels.length - maxCount} more channels (showing first ${maxCount})`;
+    }
+    
+    return formatted;
+  }
+
+  static formatUserInfo(user: any): string {
+    if (!user) return 'User not found.';
+    
+    const name = user.name || 'No display name';
+    const username = user.username || 'No username';
+    const status = user.status || 'Unknown';
+    const email = user.emails?.[0]?.address || 'No email';
+    const created = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Unknown';
+    const lastLogin = user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never';
+    const roles = user.roles?.join(', ') || 'user';
+    
+    return `👤 ${name} (@${username})\n` +
+           `Status: ${status}\n` +
+           `Email: ${email}\n` +
+           `Roles: ${roles}\n` +
+           `Created: ${created}\n` +
+           `Last Login: ${lastLogin}`;
+  }
+
+  static formatRoomInfo(room: any): string {
+    if (!room) return 'Room not found.';
+    
+    const name = room.fname || room.name || 'Unnamed Room';
+    const type = room.t === 'c' ? 'Public Channel' : 
+                 room.t === 'p' ? 'Private Group' : 
+                 room.t === 'd' ? 'Direct Message' : 'Room';
+    const members = room.usersCount || 0;
+    const messages = room.msgs || 0;
+    const topic = room.topic || 'No topic';
+    const description = room.description || 'No description';
+    const created = room.ts ? new Date(room.ts).toLocaleDateString() : 'Unknown';
+    const creator = room.u?.username || 'Unknown';
+    const readonly = room.ro ? 'Yes' : 'No';
+    
+    return `🏠 ${name}\n` +
+           `Type: ${type}\n` +
+           `Members: ${members} | Messages: ${messages}\n` +
+           `Topic: ${topic}\n` +
+           `Description: ${description}\n` +
+           `Created: ${created} by @${creator}\n` +
+           `Read-only: ${readonly}`;
+  }
+
   static formatUser(user: any): string {
     const name = user.name || user.username || 'Unknown User';
     const username = user.username ? `@${user.username}` : '';
@@ -1135,7 +1205,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(channels, null, 2),
+              text: ResponseFormatter.formatChannelList(channels, 25),
             },
           ],
         };
@@ -1217,7 +1287,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(user, null, 2),
+              text: ResponseFormatter.formatUserInfo(user),
             },
           ],
         };
@@ -1230,7 +1300,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(room, null, 2),
+              text: ResponseFormatter.formatRoomInfo(room),
             },
           ],
         };
