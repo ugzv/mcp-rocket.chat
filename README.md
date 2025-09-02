@@ -131,7 +131,7 @@ Add to your Claude Desktop config (`claude_config.json`):
 - `send_message` - Send messages to channels or users
 - `send_message_with_attachment` - Send messages with file attachments
 - `get_messages` - Retrieve messages from a room
-- `search_messages` - Search for messages across rooms
+- `search_messages` - Basic search for messages across rooms
 
 ### Channel Management
 - `list_channels` - List available channels (public/private/direct)
@@ -151,6 +151,15 @@ Add to your Claude Desktop config (`claude_config.json`):
 - `analyze_image` - Analyze existing room images using MCP image understanding
 - `delete_file` - Remove files from rooms
 - `get_room_files` - List all files uploaded to a room
+
+### Advanced Search & Discovery
+- `advanced_search` - Powerful search with filters, date ranges, user filtering, and sorting
+- `global_search` - Search across all accessible content (messages, rooms, users)
+
+### Analytics & Insights
+- `get_server_statistics` - Comprehensive server statistics and usage metrics
+- `get_room_analytics` - Detailed room analytics with message patterns, file usage, and member activity
+- `get_user_activity` - User activity summary across rooms with behavioral insights
 
 ### Utilities
 - `test_connection` - Test connection to Rocket.Chat server
@@ -183,6 +192,20 @@ npm start
 - **MCP Image Understanding**: Analyze images using Claude's vision capabilities
 - **File Management**: List, delete, and organize room files
 - **Security**: File type validation, size limits, and secure handling
+
+### 🔍 Advanced Search & Discovery
+- **Advanced Search**: Multi-parameter search with date ranges, user filters, message type filtering
+- **Global Search**: Search across messages, rooms, and users simultaneously
+- **Smart Filtering**: Filter by mentions, starred messages, pinned messages
+- **Flexible Sorting**: Sort by timestamp or relevance, ascending or descending
+- **Comprehensive Results**: Detailed search results with metadata and context
+
+### 📊 Analytics & Insights
+- **Server Statistics**: Comprehensive server usage, performance, and configuration metrics
+- **Room Analytics**: Detailed room analysis including message patterns, user activity, file usage
+- **User Activity**: Individual user behavior analysis across rooms and time periods
+- **Content Analysis**: File type distribution, message length analysis, activity patterns
+- **Time-based Insights**: Activity by hour/day, recent user joins, engagement metrics
 
 ### 🤖 AI-Powered Features
 - **Image Analysis**: Describe images, extract text, identify objects

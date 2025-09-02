@@ -203,6 +203,45 @@ const sendMessageWithAttachmentSchema = z.object({
   threadId: z.string().optional().describe('Optional thread ID to reply to'),
 });
 
+const advancedSearchSchema = z.object({
+  query: z.string().describe('Search query text'),
+  roomId: z.string().optional().describe('Optional room ID to search within'),
+  userId: z.string().optional().describe('Optional user ID to filter messages by'),
+  dateFrom: z.string().optional().describe('Start date for search (ISO format)'),
+  dateTo: z.string().optional().describe('End date for search (ISO format)'),
+  messageType: z.enum(['all', 'mentions', 'starred', 'pinned']).default('all').describe('Type of messages to search'),
+  sortBy: z.enum(['timestamp', 'relevance']).default('timestamp').describe('Sort results by'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc').describe('Sort order'),
+  count: z.number().default(20).describe('Number of results to return'),
+  offset: z.number().default(0).describe('Number of results to skip'),
+});
+
+const globalSearchSchema = z.object({
+  query: z.string().describe('Global search query'),
+  searchType: z.enum(['messages', 'rooms', 'users', 'all']).default('all').describe('Type of content to search'),
+  limit: z.number().default(50).describe('Maximum number of results per type'),
+});
+
+const getRoomAnalyticsSchema = z.object({
+  roomId: z.string().describe('Room ID to analyze'),
+  dateFrom: z.string().optional().describe('Start date for analysis (ISO format)'),
+  dateTo: z.string().optional().describe('End date for analysis (ISO format)'),
+  includeMessages: z.boolean().default(true).describe('Include message analytics'),
+  includeFiles: z.boolean().default(true).describe('Include file analytics'),
+  includeMembers: z.boolean().default(true).describe('Include member analytics'),
+});
+
+const getUserActivitySchema = z.object({
+  userId: z.string().describe('User ID to analyze'),
+  dateFrom: z.string().optional().describe('Start date for analysis (ISO format)'),
+  dateTo: z.string().optional().describe('End date for analysis (ISO format)'),
+  includeRooms: z.array(z.string()).optional().describe('Specific room IDs to analyze'),
+});
+
+const getServerStatisticsSchema = z.object({
+  // No parameters needed for server statistics
+});
+
 // Define tools with better structure
 const tools: Tool[] = [
   {
@@ -761,6 +800,101 @@ const tools: Tool[] = [
         threadId: { type: 'string', description: 'Optional thread ID to reply to' },
       },
       required: ['channel', 'text', 'filePath'],
+    },
+  },
+  {
+    name: 'advanced_search',
+    description: 'Advanced search with filters, date ranges, and sorting options',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query text' },
+        roomId: { type: 'string', description: 'Optional room ID to search within' },
+        userId: { type: 'string', description: 'Optional user ID to filter messages by' },
+        dateFrom: { type: 'string', description: 'Start date for search (ISO format)' },
+        dateTo: { type: 'string', description: 'End date for search (ISO format)' },
+        messageType: { 
+          type: 'string', 
+          enum: ['all', 'mentions', 'starred', 'pinned'],
+          description: 'Type of messages to search',
+          default: 'all'
+        },
+        sortBy: { 
+          type: 'string', 
+          enum: ['timestamp', 'relevance'],
+          description: 'Sort results by',
+          default: 'timestamp'
+        },
+        sortOrder: { 
+          type: 'string', 
+          enum: ['asc', 'desc'],
+          description: 'Sort order',
+          default: 'desc'
+        },
+        count: { type: 'number', description: 'Number of results to return', default: 20 },
+        offset: { type: 'number', description: 'Number of results to skip', default: 0 },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'global_search',
+    description: 'Search across all accessible content (messages, rooms, users)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Global search query' },
+        searchType: { 
+          type: 'string', 
+          enum: ['messages', 'rooms', 'users', 'all'],
+          description: 'Type of content to search',
+          default: 'all'
+        },
+        limit: { type: 'number', description: 'Maximum number of results per type', default: 50 },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'get_server_statistics',
+    description: 'Get comprehensive server statistics and usage metrics',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'get_room_analytics',
+    description: 'Get detailed analytics for a specific room including message patterns, file usage, and member activity',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID to analyze' },
+        dateFrom: { type: 'string', description: 'Start date for analysis (ISO format)' },
+        dateTo: { type: 'string', description: 'End date for analysis (ISO format)' },
+        includeMessages: { type: 'boolean', description: 'Include message analytics', default: true },
+        includeFiles: { type: 'boolean', description: 'Include file analytics', default: true },
+        includeMembers: { type: 'boolean', description: 'Include member analytics', default: true },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'get_user_activity',
+    description: 'Get detailed user activity summary across rooms with behavioral insights',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', description: 'User ID to analyze' },
+        dateFrom: { type: 'string', description: 'Start date for analysis (ISO format)' },
+        dateTo: { type: 'string', description: 'End date for analysis (ISO format)' },
+        includeRooms: { 
+          type: 'array', 
+          items: { type: 'string' },
+          description: 'Specific room IDs to analyze' 
+        },
+      },
+      required: ['userId'],
     },
   },
 ];
@@ -1470,6 +1604,113 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Message with attachment sent successfully!\nMessage ID: ${result.message._id}\nFile ID: ${result.file._id}\nFile Name: ${result.file.name}`,
+            },
+          ],
+        };
+      }
+
+      case 'advanced_search': {
+        const validatedArgs = advancedSearchSchema.parse(args);
+        const result = await rocketChat.advancedSearch({
+          query: validatedArgs.query,
+          roomId: validatedArgs.roomId,
+          userId: validatedArgs.userId,
+          dateFrom: validatedArgs.dateFrom,
+          dateTo: validatedArgs.dateTo,
+          messageType: validatedArgs.messageType,
+          sortBy: validatedArgs.sortBy,
+          sortOrder: validatedArgs.sortOrder,
+          count: validatedArgs.count,
+          offset: validatedArgs.offset
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Advanced Search Results:\nQuery: "${validatedArgs.query}"\nFound: ${result.total} messages\nFilters Applied: ${JSON.stringify(result.filters, null, 2)}\n\nResults:\n${JSON.stringify(result.messages, null, 2)}`,
+            },
+          ],
+        };
+      }
+
+      case 'global_search': {
+        const validatedArgs = globalSearchSchema.parse(args);
+        const result = await rocketChat.globalSearch({
+          query: validatedArgs.query,
+          searchType: validatedArgs.searchType,
+          limit: validatedArgs.limit
+        });
+
+        const summary = `Global Search Results for: "${validatedArgs.query}"\n` +
+                       `Search Type: ${validatedArgs.searchType}\n\n` +
+                       `Results Found:\n` +
+                       `- Messages: ${result.totals.messages}\n` +
+                       `- Rooms: ${result.totals.rooms}\n` +
+                       `- Users: ${result.totals.users}\n\n`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: summary + JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_server_statistics': {
+        const result = await rocketChat.getServerStatistics();
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Server Statistics:\n${JSON.stringify(result, null, 2)}`,
+            },
+          ],
+        };
+      }
+
+      case 'get_room_analytics': {
+        const validatedArgs = getRoomAnalyticsSchema.parse(args);
+        const result = await rocketChat.getRoomAnalytics(validatedArgs.roomId, {
+          dateFrom: validatedArgs.dateFrom,
+          dateTo: validatedArgs.dateTo,
+          includeMessages: validatedArgs.includeMessages,
+          includeFiles: validatedArgs.includeFiles,
+          includeMembers: validatedArgs.includeMembers
+        });
+
+        const summary = `Room Analytics for: ${validatedArgs.roomId}\n` +
+                       `Period: ${validatedArgs.dateFrom || 'All time'} to ${validatedArgs.dateTo || 'Now'}\n\n`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: summary + JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_user_activity': {
+        const validatedArgs = getUserActivitySchema.parse(args);
+        const result = await rocketChat.getUserActivitySummary(validatedArgs.userId, {
+          dateFrom: validatedArgs.dateFrom,
+          dateTo: validatedArgs.dateTo,
+          includeRooms: validatedArgs.includeRooms
+        });
+
+        const summary = `User Activity Summary for: ${validatedArgs.userId}\n` +
+                       `Period: ${validatedArgs.dateFrom || 'All time'} to ${validatedArgs.dateTo || 'Now'}\n\n`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: summary + JSON.stringify(result, null, 2),
             },
           ],
         };
