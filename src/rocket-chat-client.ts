@@ -111,22 +111,40 @@ export class RocketChatClient {
   }
 
   async searchMessages(query: string, roomId?: string, count: number = 20) {
+    // According to RC docs, roomId is required for chat.search
+    if (!roomId) {
+      // Fallback: try to get messages from all accessible rooms with query in message text
+      // This is a workaround since chat.search requires roomId
+      throw new Error('roomId is required for message search in this Rocket.Chat server configuration');
+    }
+
     const params = new URLSearchParams({
+      roomId: roomId,
       searchText: query,
       count: count.toString(),
-      ...(roomId && { roomId }),
     });
 
-    const result = await this.request(`/chat.search?${params}`);
-    return result.messages || [];
+    try {
+      const result = await this.request(`/chat.search?${params}`);
+      return result.messages || [];
+    } catch (error) {
+      // If chat.search is disabled, fallback to getting recent messages and filtering locally
+      console.warn('chat.search not available, falling back to recent messages filter');
+      const recentMessages = await this.getMessages(roomId, Math.min(count * 5, 100));
+      return recentMessages.filter((msg: any) => 
+        msg.msg && msg.msg.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, count);
+    }
   }
 
   // Add method to get recent messages (last 30 days by default)
   async getRecentMessages(roomId: string, count: number = 20, daysBack: number = 30) {
+    const now = new Date();
     const oldest = new Date();
     oldest.setDate(oldest.getDate() - daysBack);
     
-    return this.getMessages(roomId, count, new Date().toISOString(), oldest.toISOString());
+    // RC API expects latest > oldest for proper date range filtering
+    return this.getMessages(roomId, count, now.toISOString(), oldest.toISOString());
   }
 
   async createChannel(name: string, members?: string[], readOnly?: boolean) {
@@ -146,8 +164,25 @@ export class RocketChatClient {
   }
 
   async getRoomInfo(roomName: string) {
-    const result = await this.request(`/rooms.info?roomName=${roomName}`);
-    return result.room;
+    // Try multiple endpoints for different room types, similar to getMessages approach
+    const endpoints = [
+      `/channels.info?roomName=${encodeURIComponent(roomName)}`,
+      `/groups.info?roomName=${encodeURIComponent(roomName)}`,
+      `/rooms.info?roomName=${encodeURIComponent(roomName)}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.request(endpoint);
+        // Return the room object from different response formats
+        return result.channel || result.group || result.room;
+      } catch (error) {
+        // Continue to next endpoint
+        continue;
+      }
+    }
+    
+    throw new Error(`Unable to fetch room info for '${roomName}' - room not found or no access`);
   }
 
   async joinChannel(roomId: string) {
