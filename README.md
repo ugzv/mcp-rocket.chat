@@ -1,8 +1,8 @@
-# Rocket.Chat MCP Server Project
+# Rocket.Chat MCP Server
 
 ## Overview
 
-This repository contains comprehensive Rocket.Chat API documentation and will be used to create an MCP (Model Context Protocol) server for integrating with Rocket.Chat using both Node.js MCP SDK and Python implementations.
+A Model Context Protocol (MCP) server that enables Claude to interact with Rocket.Chat servers. This implementation uses the latest TypeScript SDK and provides comprehensive tools for managing channels, messages, users, and more.
 
 ## Documentation Structure
 
@@ -57,48 +57,114 @@ rocket-chat-docs/
 - ✅ TypeScript interfaces for all data models
 - ✅ Real-time API (WebSocket/DDP) - deprecated but documented
 
-## Next Steps - MCP Server Implementation
+## Installation
 
-### Planned MCP Server Features
+### Prerequisites
+- Node.js 18.x or higher
+- Rocket.Chat server with API access
+- Personal Access Token from Rocket.Chat
 
-1. **Connection Management**
-   - Authenticate with Rocket.Chat server
-   - Manage connection lifecycle
-   - Handle rate limiting
+### Setup
 
-2. **Message Operations**
-   - Send messages to channels/users
-   - Edit and delete messages
-   - Thread management
-   - Reactions and attachments
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/mcp-rocket.chat.git
+cd mcp-rocket.chat
+```
 
-3. **Channel Management**
-   - List channels and rooms
-   - Create/delete channels
-   - Manage members and permissions
-   - Channel settings and metadata
+2. Install dependencies:
+```bash
+npm install
+```
 
-4. **User Management**
-   - User profiles and status
-   - User search and lookup
-   - Role and permission management
+3. Configure environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your Rocket.Chat credentials
+```
 
-5. **Real-time Events**
-   - Subscribe to message events
-   - User presence updates
-   - Room notifications
+4. Build the project:
+```bash
+npm run build
+```
 
-6. **Integration Features**
-   - Webhook management
-   - Bot functionality
-   - Slash commands
+## Configuration
 
-### Technology Stack
+### Environment Variables
 
-- **Node.js Implementation**: Using official MCP SDK
-- **Python Implementation**: Alternative implementation
-- **TypeScript**: For type safety and better IDE support
-- **Authentication**: Personal Access Tokens (recommended)
+Create a `.env` file with:
+```env
+ROCKET_CHAT_URL=https://your-instance.rocket.chat
+ROCKET_CHAT_USER_ID=your_user_id
+ROCKET_CHAT_AUTH_TOKEN=your_auth_token
+```
+
+### Getting Credentials
+
+1. **User ID and Auth Token**:
+   - Go to your Rocket.Chat instance
+   - Navigate to Profile → My Account → Personal Access Tokens
+   - Generate a new token and copy both User ID and Token
+
+### Claude Desktop Configuration
+
+Add to your Claude Desktop config (`claude_config.json`):
+```json
+{
+  "mcpServers": {
+    "rocket-chat": {
+      "command": "node",
+      "args": ["path/to/mcp-rocket.chat/dist/index.js"],
+      "env": {
+        "ROCKET_CHAT_URL": "https://your-instance.rocket.chat",
+        "ROCKET_CHAT_USER_ID": "your_user_id",
+        "ROCKET_CHAT_AUTH_TOKEN": "your_auth_token"
+      }
+    }
+  }
+}
+```
+
+## Available Tools
+
+### Message Operations
+- `send_message` - Send messages to channels or users
+- `get_messages` - Retrieve messages from a room
+- `search_messages` - Search for messages across rooms
+
+### Channel Management
+- `list_channels` - List available channels (public/private/direct)
+- `create_channel` - Create new channels
+- `join_channel` - Join a channel
+- `leave_channel` - Leave a channel
+- `set_topic` - Set channel topic
+- `get_room_info` - Get detailed room information
+
+### User Management
+- `get_user_info` - Get user profile information
+
+### Utilities
+- `test_connection` - Test connection to Rocket.Chat server
+
+## Development
+
+```bash
+# Run in development mode
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+```
+
+## Technology Stack
+
+- **TypeScript**: Type-safe implementation
+- **@modelcontextprotocol/sdk**: Latest MCP SDK (v1.17.4)
+- **Zod**: Runtime type validation for tool inputs
+- **Node.js**: Runtime environment
 
 ## API Version Compatibility
 
@@ -135,4 +201,18 @@ When implementing the MCP server:
 
 ---
 
-**Status**: Documentation complete, ready for MCP server implementation
+## Status
+
+✅ **MCP Server Implementation Complete**
+- Latest MCP SDK integrated
+- All core Rocket.Chat operations supported
+- Type-safe implementation with Zod validation
+- Comprehensive error handling
+- Ready for production use
+
+## Support
+
+For issues or questions:
+- Open an issue on GitHub
+- Check the documentation in `/rocket-chat-docs`
+- Refer to [Rocket.Chat API docs](https://developer.rocket.chat/reference/api/rest-api)

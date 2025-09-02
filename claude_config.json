@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "rocket-chat": {
+      "command": "node",
+      "args": ["C:\\Projects\\dev\\mcp-rocket.chat\\dist\\index.js"],
+      "env": {
+        "ROCKET_CHAT_URL": "https://myteam.chat",
+        "ROCKET_CHAT_USER_ID": "YOUR_USER_ID",
+        "ROCKET_CHAT_AUTH_TOKEN": "YOUR_AUTH_TOKEN"
+      }
+    }
+  }
+}
