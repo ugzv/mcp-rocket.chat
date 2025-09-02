@@ -111,29 +111,28 @@ export class RocketChatClient {
   }
 
   async searchMessages(query: string, roomId?: string, count: number = 20) {
-    // According to RC docs, roomId is required for chat.search
+    // Many servers disable chat.search - use fallback approach directly
     if (!roomId) {
-      // Fallback: try to get messages from all accessible rooms with query in message text
-      // This is a workaround since chat.search requires roomId
-      throw new Error('roomId is required for message search in this Rocket.Chat server configuration');
+      throw new Error('roomId is required for message search');
     }
 
-    const params = new URLSearchParams({
-      roomId: roomId,
-      searchText: query,
-      count: count.toString(),
-    });
-
+    // Try direct search first, but immediately fallback if not available
     try {
+      const params = new URLSearchParams({
+        roomId: roomId,
+        searchText: query,
+        count: count.toString(),
+      });
+      
       const result = await this.request(`/chat.search?${params}`);
       return result.messages || [];
     } catch (error) {
-      // If chat.search is disabled, fallback to getting recent messages and filtering locally
-      console.warn('chat.search not available, falling back to recent messages filter');
-      const recentMessages = await this.getMessages(roomId, Math.min(count * 5, 100));
-      return recentMessages.filter((msg: any) => 
+      // Fallback: Get recent messages and filter locally (more reliable)
+      const recentMessages = await this.getMessages(roomId, Math.min(count * 3, 100));
+      const filtered = recentMessages.filter((msg: any) => 
         msg.msg && msg.msg.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, count);
+      );
+      return filtered.slice(0, count);
     }
   }
 
@@ -164,22 +163,53 @@ export class RocketChatClient {
   }
 
   async getRoomInfo(roomName: string) {
-    // Try multiple endpoints for different room types, similar to getMessages approach
-    const endpoints = [
-      `/channels.info?roomName=${encodeURIComponent(roomName)}`,
-      `/groups.info?roomName=${encodeURIComponent(roomName)}`,
-      `/rooms.info?roomName=${encodeURIComponent(roomName)}`
+    // Clean room name (remove # if present)
+    const cleanRoomName = roomName.startsWith('#') ? roomName.slice(1) : roomName;
+    
+    // Try ID-based lookup first if roomName looks like an ID
+    if (cleanRoomName.length > 15 && !cleanRoomName.includes(' ')) {
+      const idEndpoints = [
+        `/channels.info?roomId=${encodeURIComponent(cleanRoomName)}`,
+        `/groups.info?roomId=${encodeURIComponent(cleanRoomName)}`,
+        `/rooms.info?roomId=${encodeURIComponent(cleanRoomName)}`
+      ];
+      
+      for (const endpoint of idEndpoints) {
+        try {
+          const result = await this.request(endpoint);
+          return result.channel || result.group || result.room;
+        } catch (error) {
+          continue;
+        }
+      }
+    }
+    
+    // Try name-based lookup
+    const nameEndpoints = [
+      `/channels.info?roomName=${encodeURIComponent(cleanRoomName)}`,
+      `/groups.info?roomName=${encodeURIComponent(cleanRoomName)}`
     ];
     
-    for (const endpoint of endpoints) {
+    for (const endpoint of nameEndpoints) {
       try {
         const result = await this.request(endpoint);
-        // Return the room object from different response formats
         return result.channel || result.group || result.room;
       } catch (error) {
-        // Continue to next endpoint
         continue;
       }
+    }
+    
+    // Final fallback: search in room list
+    try {
+      const rooms = await this.listChannels();
+      const foundRoom = rooms.find((room: any) => 
+        room.name === cleanRoomName || room.fname === cleanRoomName
+      );
+      if (foundRoom) {
+        return foundRoom;
+      }
+    } catch (error) {
+      // Continue to error
     }
     
     throw new Error(`Unable to fetch room info for '${roomName}' - room not found or no access`);
