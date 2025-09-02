@@ -111,39 +111,47 @@ export class RocketChatClient {
   }
 
   async searchMessages(query: string, roomId?: string, count: number = 20) {
-    // Many servers disable chat.search - use fallback approach directly
     if (!roomId) {
       throw new Error('roomId is required for message search');
     }
 
-    // Try direct search first, but immediately fallback if not available
+    // Many servers disable chat.search endpoint, so we use fallback approach as primary method
+    console.warn('Using fallback search method - fetching recent messages and filtering locally');
+    
     try {
-      const params = new URLSearchParams({
-        roomId: roomId,
-        searchText: query,
-        count: count.toString(),
-      });
-      
-      const result = await this.request(`/chat.search?${params}`);
-      return result.messages || [];
-    } catch (error) {
-      // Fallback: Get recent messages and filter locally (more reliable)
-      const recentMessages = await this.getMessages(roomId, Math.min(count * 3, 100));
+      // Primary method: Get recent messages and filter locally (more reliable)
+      const searchCount = Math.min(count * 5, 200); // Get more messages to search through
+      const recentMessages = await this.getMessages(roomId, searchCount);
       const filtered = recentMessages.filter((msg: any) => 
         msg.msg && msg.msg.toLowerCase().includes(query.toLowerCase())
       );
       return filtered.slice(0, count);
+    } catch (fallbackError: any) {
+      // Last resort: Try the direct search API if fallback fails
+      try {
+        const params = new URLSearchParams({
+          roomId: roomId,
+          searchText: query,
+          count: count.toString(),
+        });
+        
+        const result = await this.request(`/chat.search?${params}`);
+        return result.messages || [];
+      } catch (searchError: any) {
+        throw new Error(`Search failed: ${fallbackError.message}. Direct search also failed: ${searchError.message}`);
+      }
     }
   }
 
   // Add method to get recent messages (last 30 days by default)
   async getRecentMessages(roomId: string, count: number = 20, daysBack: number = 30) {
     const now = new Date();
-    const oldest = new Date();
-    oldest.setDate(oldest.getDate() - daysBack);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysBack);
     
-    // RC API expects latest > oldest for proper date range filtering
-    return this.getMessages(roomId, count, now.toISOString(), oldest.toISOString());
+    // RC API expects latest (end date) and oldest (start date) parameters
+    // For recent messages: latest=now, oldest=startDate
+    return this.getMessages(roomId, count, now.toISOString(), startDate.toISOString());
   }
 
   async createChannel(name: string, members?: string[], readOnly?: boolean) {
