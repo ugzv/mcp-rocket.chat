@@ -46,11 +46,20 @@ const listChannelsSchema = z.object({
 const getMessagesSchema = z.object({
   roomId: z.string().describe('Room ID to get messages from'),
   count: z.number().default(20).describe('Number of messages to retrieve'),
+  latest: z.string().optional().describe('Latest date to get messages from (ISO format)'),
+  oldest: z.string().optional().describe('Oldest date to get messages from (ISO format)'),
+});
+
+const getRecentMessagesSchema = z.object({
+  roomId: z.string().describe('Room ID to get messages from'),
+  count: z.number().default(20).describe('Number of messages to retrieve'),
+  daysBack: z.number().default(30).describe('Number of days back to search'),
 });
 
 const searchMessagesSchema = z.object({
   query: z.string().describe('Search query'),
   roomId: z.string().optional().describe('Optional room ID to search in'),
+  count: z.number().default(20).describe('Number of messages to return'),
 });
 
 const createChannelSchema = z.object({
@@ -74,6 +83,83 @@ const joinLeaveChannelSchema = z.object({
 const setTopicSchema = z.object({
   roomId: z.string().describe('Room ID'),
   topic: z.string().describe('New topic for the channel'),
+});
+
+const updateMessageSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  msgId: z.string().describe('Message ID to update'),
+  text: z.string().describe('New message text'),
+});
+
+const deleteMessageSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  msgId: z.string().describe('Message ID to delete'),
+});
+
+const reactToMessageSchema = z.object({
+  messageId: z.string().describe('Message ID to react to'),
+  emoji: z.string().describe('Emoji reaction (e.g., :+1:, :heart:)'),
+  shouldReact: z.boolean().default(true).describe('Whether to add (true) or remove (false) reaction'),
+});
+
+const pinUnpinMessageSchema = z.object({
+  messageId: z.string().describe('Message ID to pin/unpin'),
+});
+
+const getChannelMembersSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  offset: z.number().default(0).describe('Number of members to skip'),
+  count: z.number().default(50).describe('Number of members to return'),
+});
+
+const inviteRemoveUserSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  userId: z.string().describe('User ID to invite/remove'),
+});
+
+const setAnnouncementSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  announcement: z.string().describe('Channel announcement text'),
+});
+
+const setDescriptionSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  description: z.string().describe('Channel description text'),
+});
+
+const getRoomMessagesSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  count: z.number().default(20).describe('Number of messages to return'),
+});
+
+const getThreadMessagesSchema = z.object({
+  tmid: z.string().describe('Thread message ID'),
+  count: z.number().default(50).describe('Number of messages to return'),
+});
+
+const getThreadsListSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  type: z.enum(['all', 'unread', 'following']).default('all').describe('Type of threads to list'),
+  count: z.number().default(50).describe('Number of threads to return'),
+});
+
+const followUnfollowMessageSchema = z.object({
+  messageId: z.string().describe('Message ID to follow/unfollow'),
+});
+
+const getRoomFilesSchema = z.object({
+  roomId: z.string().describe('Room ID'),
+  offset: z.number().default(0).describe('Number of files to skip'),
+  count: z.number().default(50).describe('Number of files to return'),
+});
+
+const setUserStatusSchema = z.object({
+  status: z.enum(['online', 'away', 'busy', 'offline']).describe('User status'),
+  message: z.string().optional().describe('Status message'),
+});
+
+const getUserPresenceSchema = z.object({
+  userId: z.string().describe('User ID to get presence for'),
 });
 
 // Define tools with better structure
@@ -116,7 +202,7 @@ const tools: Tool[] = [
   },
   {
     name: 'get_messages',
-    description: 'Get messages from a channel',
+    description: 'Get messages from a channel with optional date filtering',
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,6 +214,38 @@ const tools: Tool[] = [
           type: 'number',
           description: 'Number of messages to retrieve',
           default: 20,
+        },
+        latest: {
+          type: 'string',
+          description: 'Latest date to get messages from (ISO format)',
+        },
+        oldest: {
+          type: 'string', 
+          description: 'Oldest date to get messages from (ISO format)',
+        },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'get_recent_messages',
+    description: 'Get recent messages from a channel (last 30 days by default)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: {
+          type: 'string',
+          description: 'Room ID to get messages from',
+        },
+        count: {
+          type: 'number',
+          description: 'Number of messages to retrieve',
+          default: 20,
+        },
+        daysBack: {
+          type: 'number',
+          description: 'Number of days back to search',
+          default: 30,
         },
       },
       required: ['roomId'],
@@ -257,6 +375,265 @@ const tools: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: 'update_message',
+    description: 'Update/edit an existing message',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        msgId: { type: 'string', description: 'Message ID to update' },
+        text: { type: 'string', description: 'New message text' },
+      },
+      required: ['roomId', 'msgId', 'text'],
+    },
+  },
+  {
+    name: 'delete_message',
+    description: 'Delete a message',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        msgId: { type: 'string', description: 'Message ID to delete' },
+      },
+      required: ['roomId', 'msgId'],
+    },
+  },
+  {
+    name: 'react_to_message',
+    description: 'Add or remove emoji reaction to a message',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to react to' },
+        emoji: { type: 'string', description: 'Emoji reaction (e.g., :+1:, :heart:)' },
+        shouldReact: { type: 'boolean', description: 'Whether to add (true) or remove (false) reaction', default: true },
+      },
+      required: ['messageId', 'emoji'],
+    },
+  },
+  {
+    name: 'pin_message',
+    description: 'Pin a message in a channel',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to pin' },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'unpin_message',
+    description: 'Unpin a message in a channel',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to unpin' },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'get_channel_members',
+    description: 'Get members of a channel/room',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        offset: { type: 'number', description: 'Number of members to skip', default: 0 },
+        count: { type: 'number', description: 'Number of members to return', default: 50 },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'invite_to_channel',
+    description: 'Invite a user to a channel',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        userId: { type: 'string', description: 'User ID to invite' },
+      },
+      required: ['roomId', 'userId'],
+    },
+  },
+  {
+    name: 'remove_from_channel',
+    description: 'Remove a user from a channel',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        userId: { type: 'string', description: 'User ID to remove' },
+      },
+      required: ['roomId', 'userId'],
+    },
+  },
+  {
+    name: 'set_channel_announcement',
+    description: 'Set channel announcement',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        announcement: { type: 'string', description: 'Channel announcement text' },
+      },
+      required: ['roomId', 'announcement'],
+    },
+  },
+  {
+    name: 'set_channel_description',
+    description: 'Set channel description',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        description: { type: 'string', description: 'Channel description text' },
+      },
+      required: ['roomId', 'description'],
+    },
+  },
+  {
+    name: 'get_starred_messages',
+    description: 'Get starred messages from a room',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        count: { type: 'number', description: 'Number of messages to return', default: 20 },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'get_pinned_messages',
+    description: 'Get pinned messages from a room',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        count: { type: 'number', description: 'Number of messages to return', default: 20 },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'get_mentioned_messages',
+    description: 'Get messages where user was mentioned',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        count: { type: 'number', description: 'Number of messages to return', default: 20 },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'get_thread_messages',
+    description: 'Get messages from a specific thread',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tmid: { type: 'string', description: 'Thread message ID' },
+        count: { type: 'number', description: 'Number of messages to return', default: 50 },
+      },
+      required: ['tmid'],
+    },
+  },
+  {
+    name: 'get_threads_list',
+    description: 'Get list of threads in a room',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        type: { type: 'string', enum: ['all', 'unread', 'following'], description: 'Type of threads to list', default: 'all' },
+        count: { type: 'number', description: 'Number of threads to return', default: 50 },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'follow_message',
+    description: 'Follow a message/thread for notifications',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to follow' },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'unfollow_message',
+    description: 'Unfollow a message/thread',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Message ID to unfollow' },
+      },
+      required: ['messageId'],
+    },
+  },
+  {
+    name: 'get_room_files',
+    description: 'Get files uploaded to a room',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+        offset: { type: 'number', description: 'Number of files to skip', default: 0 },
+        count: { type: 'number', description: 'Number of files to return', default: 50 },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'get_room_counters',
+    description: 'Get room statistics (members, messages, unreads)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        roomId: { type: 'string', description: 'Room ID' },
+      },
+      required: ['roomId'],
+    },
+  },
+  {
+    name: 'get_server_info',
+    description: 'Get Rocket.Chat server information',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'set_user_status',
+    description: 'Set user status and message',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['online', 'away', 'busy', 'offline'], description: 'User status' },
+        message: { type: 'string', description: 'Status message' },
+      },
+      required: ['status'],
+    },
+  },
+  {
+    name: 'get_user_presence',
+    description: 'Get user presence information',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', description: 'User ID to get presence for' },
+      },
+      required: ['userId'],
+    },
+  },
 ];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -302,7 +679,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const validatedArgs = getMessagesSchema.parse(args);
         const messages = await rocketChat.getMessages(
           validatedArgs.roomId,
-          validatedArgs.count
+          validatedArgs.count,
+          validatedArgs.latest,
+          validatedArgs.oldest
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(messages, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_recent_messages': {
+        const validatedArgs = getRecentMessagesSchema.parse(args);
+        const messages = await rocketChat.getRecentMessages(
+          validatedArgs.roomId,
+          validatedArgs.count,
+          validatedArgs.daysBack
         );
         return {
           content: [
@@ -318,7 +714,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const validatedArgs = searchMessagesSchema.parse(args);
         const searchResults = await rocketChat.searchMessages(
           validatedArgs.query,
-          validatedArgs.roomId
+          validatedArgs.roomId,
+          validatedArgs.count
         );
         return {
           content: [
@@ -436,6 +833,341 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         }
+      }
+
+      case 'update_message': {
+        const validatedArgs = updateMessageSchema.parse(args);
+        const result = await rocketChat.updateMessage(
+          validatedArgs.roomId,
+          validatedArgs.msgId,
+          validatedArgs.text
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Message updated successfully' : 'Failed to update message',
+            },
+          ],
+        };
+      }
+
+      case 'delete_message': {
+        const validatedArgs = deleteMessageSchema.parse(args);
+        const result = await rocketChat.deleteMessage(
+          validatedArgs.roomId,
+          validatedArgs.msgId
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Message deleted successfully' : 'Failed to delete message',
+            },
+          ],
+        };
+      }
+
+      case 'react_to_message': {
+        const validatedArgs = reactToMessageSchema.parse(args);
+        const result = await rocketChat.reactToMessage(
+          validatedArgs.messageId,
+          validatedArgs.emoji,
+          validatedArgs.shouldReact
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? `Reaction ${validatedArgs.shouldReact ? 'added' : 'removed'} successfully` : 'Failed to react to message',
+            },
+          ],
+        };
+      }
+
+      case 'pin_message': {
+        const validatedArgs = pinUnpinMessageSchema.parse(args);
+        const result = await rocketChat.pinMessage(validatedArgs.messageId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Message pinned successfully' : 'Failed to pin message',
+            },
+          ],
+        };
+      }
+
+      case 'unpin_message': {
+        const validatedArgs = pinUnpinMessageSchema.parse(args);
+        const result = await rocketChat.unpinMessage(validatedArgs.messageId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Message unpinned successfully' : 'Failed to unpin message',
+            },
+          ],
+        };
+      }
+
+      case 'get_channel_members': {
+        const validatedArgs = getChannelMembersSchema.parse(args);
+        const members = await rocketChat.getChannelMembers(
+          validatedArgs.roomId,
+          validatedArgs.offset,
+          validatedArgs.count
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(members, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'invite_to_channel': {
+        const validatedArgs = inviteRemoveUserSchema.parse(args);
+        const result = await rocketChat.inviteToChannel(
+          validatedArgs.roomId,
+          validatedArgs.userId
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'User invited successfully' : 'Failed to invite user',
+            },
+          ],
+        };
+      }
+
+      case 'remove_from_channel': {
+        const validatedArgs = inviteRemoveUserSchema.parse(args);
+        const result = await rocketChat.removeFromChannel(
+          validatedArgs.roomId,
+          validatedArgs.userId
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'User removed successfully' : 'Failed to remove user',
+            },
+          ],
+        };
+      }
+
+      case 'set_channel_announcement': {
+        const validatedArgs = setAnnouncementSchema.parse(args);
+        const result = await rocketChat.setChannelAnnouncement(
+          validatedArgs.roomId,
+          validatedArgs.announcement
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Announcement set successfully' : 'Failed to set announcement',
+            },
+          ],
+        };
+      }
+
+      case 'set_channel_description': {
+        const validatedArgs = setDescriptionSchema.parse(args);
+        const result = await rocketChat.setChannelDescription(
+          validatedArgs.roomId,
+          validatedArgs.description
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Description set successfully' : 'Failed to set description',
+            },
+          ],
+        };
+      }
+
+      case 'get_starred_messages': {
+        const validatedArgs = getRoomMessagesSchema.parse(args);
+        const messages = await rocketChat.getStarredMessages(
+          validatedArgs.roomId,
+          validatedArgs.count
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(messages, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_pinned_messages': {
+        const validatedArgs = getRoomMessagesSchema.parse(args);
+        const messages = await rocketChat.getPinnedMessages(
+          validatedArgs.roomId,
+          validatedArgs.count
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(messages, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_mentioned_messages': {
+        const validatedArgs = getRoomMessagesSchema.parse(args);
+        const messages = await rocketChat.getMentionedMessages(
+          validatedArgs.roomId,
+          validatedArgs.count
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(messages, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_thread_messages': {
+        const validatedArgs = getThreadMessagesSchema.parse(args);
+        const messages = await rocketChat.getThreadMessages(
+          validatedArgs.tmid,
+          validatedArgs.count
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(messages, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_threads_list': {
+        const validatedArgs = getThreadsListSchema.parse(args);
+        const threads = await rocketChat.getThreadsList(
+          validatedArgs.roomId,
+          validatedArgs.type,
+          validatedArgs.count
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(threads, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'follow_message': {
+        const validatedArgs = followUnfollowMessageSchema.parse(args);
+        const result = await rocketChat.followMessage(validatedArgs.messageId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Message followed successfully' : 'Failed to follow message',
+            },
+          ],
+        };
+      }
+
+      case 'unfollow_message': {
+        const validatedArgs = followUnfollowMessageSchema.parse(args);
+        const result = await rocketChat.unfollowMessage(validatedArgs.messageId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? 'Message unfollowed successfully' : 'Failed to unfollow message',
+            },
+          ],
+        };
+      }
+
+      case 'get_room_files': {
+        const validatedArgs = getRoomFilesSchema.parse(args);
+        const files = await rocketChat.getRoomFiles(
+          validatedArgs.roomId,
+          validatedArgs.offset,
+          validatedArgs.count
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(files, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_room_counters': {
+        const validatedArgs = { roomId: (args as any).roomId };
+        const counters = await rocketChat.getRoomCounters(validatedArgs.roomId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(counters, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_server_info': {
+        const serverInfo = await rocketChat.getServerInfo();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(serverInfo, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'set_user_status': {
+        const validatedArgs = setUserStatusSchema.parse(args);
+        const result = await rocketChat.setUserStatus(
+          validatedArgs.status,
+          validatedArgs.message
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: result.success ? `Status set to ${validatedArgs.status}` : 'Failed to set status',
+            },
+          ],
+        };
+      }
+
+      case 'get_user_presence': {
+        const validatedArgs = getUserPresenceSchema.parse(args);
+        const presence = await rocketChat.getUserPresence(validatedArgs.userId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(presence, null, 2),
+            },
+          ],
+        };
       }
 
       default:

@@ -78,19 +78,51 @@ export class RocketChatClient {
     return result.update || [];
   }
 
-  async getMessages(roomId: string, count: number = 20) {
-    const result = await this.request(`/channels.messages?roomId=${roomId}&count=${count}`);
-    return result.messages || [];
+  async getMessages(roomId: string, count: number = 20, latest?: string, oldest?: string) {
+    // Try different endpoints for different room types
+    const params = new URLSearchParams({
+      roomId,
+      count: count.toString(),
+      ...(latest && { latest }),
+      ...(oldest && { oldest })
+    });
+    
+    const endpoints = [
+      `/channels.history?${params}`,
+      `/groups.history?${params}`,
+      `/dm.history?${params}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.request(endpoint);
+        return result.messages || [];
+      } catch (error: any) {
+        // Continue to next endpoint if this one fails
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to fetch messages - room not found or no access');
   }
 
-  async searchMessages(query: string, roomId?: string) {
+  async searchMessages(query: string, roomId?: string, count: number = 20) {
     const params = new URLSearchParams({
       searchText: query,
+      count: count.toString(),
       ...(roomId && { roomId }),
     });
 
     const result = await this.request(`/chat.search?${params}`);
     return result.messages || [];
+  }
+
+  // Add method to get recent messages (last 30 days by default)
+  async getRecentMessages(roomId: string, count: number = 20, daysBack: number = 30) {
+    const oldest = new Date();
+    oldest.setDate(oldest.getDate() - daysBack);
+    
+    return this.getMessages(roomId, count, new Date().toISOString(), oldest.toISOString());
   }
 
   async createChannel(name: string, members?: string[], readOnly?: boolean) {
@@ -155,5 +187,313 @@ export class RocketChatClient {
         error: error.message || 'Connection failed',
       };
     }
+  }
+
+  async updateMessage(roomId: string, msgId: string, text: string) {
+    return this.request('/chat.update', {
+      method: 'POST',
+      body: JSON.stringify({
+        roomId,
+        msgId,
+        text,
+      }),
+    });
+  }
+
+  async deleteMessage(roomId: string, msgId: string) {
+    return this.request('/chat.delete', {
+      method: 'POST',
+      body: JSON.stringify({
+        roomId,
+        msgId,
+      }),
+    });
+  }
+
+  async reactToMessage(messageId: string, emoji: string, shouldReact: boolean = true) {
+    return this.request('/chat.react', {
+      method: 'POST',
+      body: JSON.stringify({
+        messageId,
+        emoji,
+        shouldReact,
+      }),
+    });
+  }
+
+  async pinMessage(messageId: string) {
+    return this.request('/chat.pinMessage', {
+      method: 'POST',
+      body: JSON.stringify({
+        messageId,
+      }),
+    });
+  }
+
+  async unpinMessage(messageId: string) {
+    return this.request('/chat.unPinMessage', {
+      method: 'POST',
+      body: JSON.stringify({
+        messageId,
+      }),
+    });
+  }
+
+  async getChannelMembers(roomId: string, offset: number = 0, count: number = 50) {
+    // Try different endpoints for different room types
+    const endpoints = [
+      `/channels.members?roomId=${roomId}&offset=${offset}&count=${count}`,
+      `/groups.members?roomId=${roomId}&offset=${offset}&count=${count}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.request(endpoint);
+        return result.members || [];
+      } catch (error: any) {
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to fetch members - room not found or no access');
+  }
+
+  async inviteToChannel(roomId: string, userId: string) {
+    // Try different endpoints for different room types
+    const endpoints = [
+      { endpoint: '/channels.invite', body: { roomId, userId } },
+      { endpoint: '/groups.invite', body: { roomId, userId } }
+    ];
+    
+    for (const { endpoint, body } of endpoints) {
+      try {
+        return await this.request(endpoint, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (error: any) {
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to invite user - room not found or no access');
+  }
+
+  async removeFromChannel(roomId: string, userId: string) {
+    // Try different endpoints for different room types
+    const endpoints = [
+      { endpoint: '/channels.kick', body: { roomId, userId } },
+      { endpoint: '/groups.kick', body: { roomId, userId } }
+    ];
+    
+    for (const { endpoint, body } of endpoints) {
+      try {
+        return await this.request(endpoint, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (error: any) {
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to remove user - room not found or no access');
+  }
+
+  async setChannelAnnouncement(roomId: string, announcement: string) {
+    // Try different endpoints for different room types
+    const endpoints = [
+      { endpoint: '/channels.setAnnouncement', body: { roomId, announcement } },
+      { endpoint: '/groups.setAnnouncement', body: { roomId, announcement } }
+    ];
+    
+    for (const { endpoint, body } of endpoints) {
+      try {
+        return await this.request(endpoint, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (error: any) {
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to set announcement - room not found or no access');
+  }
+
+  async setChannelDescription(roomId: string, description: string) {
+    // Try different endpoints for different room types
+    const endpoints = [
+      { endpoint: '/channels.setDescription', body: { roomId, description } },
+      { endpoint: '/groups.setDescription', body: { roomId, description } }
+    ];
+    
+    for (const { endpoint, body } of endpoints) {
+      try {
+        return await this.request(endpoint, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (error: any) {
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to set description - room not found or no access');
+  }
+
+  // Advanced message operations
+  async getStarredMessages(roomId: string, count: number = 20) {
+    const result = await this.request(`/chat.getStarredMessages?roomId=${roomId}&count=${count}`);
+    return result.messages || [];
+  }
+
+  async getPinnedMessages(roomId: string, count: number = 20) {
+    const result = await this.request(`/chat.getPinnedMessages?roomId=${roomId}&count=${count}`);
+    return result.messages || [];
+  }
+
+  async getMentionedMessages(roomId: string, count: number = 20) {
+    const result = await this.request(`/chat.getMentionedMessages?roomId=${roomId}&count=${count}`);
+    return result.messages || [];
+  }
+
+  // Integration management
+  async createWebhook(webhookData: {
+    type: 'webhook-incoming' | 'webhook-outgoing';
+    name: string;
+    enabled?: boolean;
+    username?: string;
+    urls?: string[];
+    channel?: string;
+    alias?: string;
+    avatar?: string;
+    emoji?: string;
+    triggerWords?: string[];
+    event?: string;
+  }) {
+    return this.request('/integrations.create', {
+      method: 'POST',
+      body: JSON.stringify(webhookData),
+    });
+  }
+
+  async listIntegrations(offset: number = 0, count: number = 50) {
+    const result = await this.request(`/integrations.list?offset=${offset}&count=${count}`);
+    return result.integrations || [];
+  }
+
+  async deleteIntegration(type: 'webhook-incoming' | 'webhook-outgoing', integrationId: string) {
+    return this.request('/integrations.remove', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        type,
+        integrationId,
+      }),
+    });
+  }
+
+  // User presence and status
+  async getUserPresence(userId: string) {
+    const result = await this.request(`/users.getPresence?userId=${userId}`);
+    return result.presence;
+  }
+
+  async setUserStatus(status: 'online' | 'away' | 'busy' | 'offline', message?: string) {
+    return this.request('/users.setStatus', {
+      method: 'POST',
+      body: JSON.stringify({
+        status,
+        ...(message && { message }),
+      }),
+    });
+  }
+
+  // Advanced room operations
+  async getRoomCounters(roomId: string) {
+    // Try different endpoints for different room types
+    const endpoints = [
+      `/channels.counters?roomId=${roomId}`,
+      `/groups.counters?roomId=${roomId}`,
+      `/dm.counters?roomId=${roomId}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.request(endpoint);
+        return result;
+      } catch (error: any) {
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to get counters - room not found or no access');
+  }
+
+  async getRoomFiles(roomId: string, offset: number = 0, count: number = 50, sort?: object) {
+    // Try different endpoints for different room types  
+    const params = new URLSearchParams({
+      roomId,
+      offset: offset.toString(),
+      count: count.toString(),
+      ...(sort && { sort: JSON.stringify(sort) })
+    });
+    
+    const endpoints = [
+      `/channels.files?${params}`,
+      `/groups.files?${params}`,
+      `/dm.files?${params}`
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await this.request(endpoint);
+        return result.files || [];
+      } catch (error: any) {
+        continue;
+      }
+    }
+    
+    throw new Error('Unable to get files - room not found or no access');
+  }
+
+  // Thread operations
+  async getThreadMessages(tmid: string, count: number = 50) {
+    const result = await this.request(`/chat.getThreadMessages?tmid=${tmid}&count=${count}`);
+    return result.messages || [];
+  }
+
+  async getThreadsList(roomId: string, type: 'all' | 'unread' | 'following' = 'all', count: number = 50) {
+    const result = await this.request(`/chat.getThreadsList?rid=${roomId}&type=${type}&count=${count}`);
+    return result.threads || [];
+  }
+
+  async followMessage(messageId: string) {
+    return this.request('/chat.followMessage', {
+      method: 'POST',
+      body: JSON.stringify({
+        mid: messageId,
+      }),
+    });
+  }
+
+  async unfollowMessage(messageId: string) {
+    return this.request('/chat.unfollowMessage', {
+      method: 'POST',
+      body: JSON.stringify({
+        mid: messageId,
+      }),
+    });
+  }
+
+  // Server and statistics
+  async getServerInfo() {
+    const result = await this.request('/info');
+    return result;
+  }
+
+  async getStatistics() {
+    const result = await this.request('/statistics');
+    return result;
   }
 }
