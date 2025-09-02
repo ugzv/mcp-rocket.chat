@@ -283,6 +283,102 @@ class ResponseFormatter {
     
     return formatted;
   }
+
+  static formatMemberList(members: any[], maxCount: number = 15): string {
+    if (!members || members.length === 0) {
+      return 'No members found.';
+    }
+
+    const displayMembers = members.slice(0, maxCount);
+    const truncated = members.length > maxCount;
+    
+    const formatted = displayMembers.map(member => {
+      const name = member.name || member.username || 'Unknown';
+      const username = member.username ? `@${member.username}` : '';
+      const status = member.status ? `(${member.status})` : '';
+      const roles = member.roles?.length > 1 ? ` [${member.roles.filter((r: string) => r !== 'user').join(', ')}]` : '';
+      
+      return `👤 ${name} ${username} ${status}${roles}`.trim();
+    }).join('\n');
+    
+    if (truncated) {
+      return `${formatted}\n\n... and ${members.length - maxCount} more members (showing first ${maxCount})`;
+    }
+    
+    return formatted;
+  }
+
+  static formatThreadMessages(messages: any[], maxCount: number = 10): string {
+    if (!messages || messages.length === 0) {
+      return 'No thread messages found.';
+    }
+
+    // Use the existing formatMessages but with thread context
+    return `🧵 Thread Messages:\n${this.formatMessages(messages, maxCount)}`;
+  }
+
+  static formatServerInfo(serverInfo: any): string {
+    if (!serverInfo) return 'Server information not available.';
+    
+    const version = serverInfo.version || 'Unknown';
+    const build = serverInfo.build?.date ? new Date(serverInfo.build.date).toLocaleDateString() : 'Unknown';
+    const commit = serverInfo.commit?.hash?.substring(0, 7) || 'Unknown';
+    
+    return `🚀 Rocket.Chat Server Info\n` +
+           `Version: ${version}\n` +
+           `Build Date: ${build}\n` +
+           `Commit: ${commit}`;
+  }
+
+  static formatCounters(counters: any): string {
+    if (!counters) return 'No counters available.';
+    
+    return `📊 Room Counters\n` +
+           `Members: ${counters.joined || 0}\n` +
+           `Messages: ${counters.msgs || 0}\n` +
+           `Unread: ${counters.unreads || 0}\n` +
+           `Mentions: ${counters.userMentions || 0}`;
+  }
+
+  static formatPresence(presence: any): string {
+    if (!presence) return 'Presence information not available.';
+    
+    const status = presence.status || 'unknown';
+    const statusText = presence.statusText || 'No status message';
+    const lastLogin = presence.lastLogin ? new Date(presence.lastLogin).toLocaleString() : 'Never';
+    
+    return `👤 User Presence\n` +
+           `Status: ${status}\n` +
+           `Message: ${statusText}\n` +
+           `Last Login: ${lastLogin}`;
+  }
+
+  static formatServerStatistics(stats: any): string {
+    if (!stats || !stats.success) {
+      return `Server Statistics Error: ${stats?.error || 'Unknown error'}`;
+    }
+    
+    let output = `📈 Server Statistics\n`;
+    
+    // Add key statistics if available
+    if (stats.totalUsers) output += `Total Users: ${stats.totalUsers}\n`;
+    if (stats.totalRooms) output += `Total Rooms: ${stats.totalRooms}\n`;
+    if (stats.totalMessages) output += `Total Messages: ${stats.totalMessages}\n`;
+    if (stats.onlineUsers) output += `Online Users: ${stats.onlineUsers}\n`;
+    if (stats.uploadsSize) output += `Storage Used: ${Math.round(stats.uploadsSize / 1024 / 1024)}MB\n`;
+    
+    // If no specific stats, show what's available
+    if (output === `📈 Server Statistics\n`) {
+      const keys = Object.keys(stats).filter(k => k !== 'success').slice(0, 10);
+      keys.forEach(key => {
+        if (typeof stats[key] === 'number' || typeof stats[key] === 'string') {
+          output += `${key}: ${stats[key]}\n`;
+        }
+      });
+    }
+    
+    return output;
+  }
 }
 
 dotenv.config();
@@ -1458,7 +1554,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(members, null, 2),
+              text: ResponseFormatter.formatMemberList(members, 20),
             },
           ],
         };
@@ -1538,7 +1634,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(messages, null, 2),
+              text: `⭐ Starred Messages:\n${ResponseFormatter.formatMessages(messages, 10)}`,
             },
           ],
         };
@@ -1554,7 +1650,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(messages, null, 2),
+              text: `📌 Pinned Messages:\n${ResponseFormatter.formatMessages(messages, 10)}`,
             },
           ],
         };
@@ -1570,7 +1666,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(messages, null, 2),
+              text: `@️ Mentioned Messages:\n${ResponseFormatter.formatMessages(messages, 10)}`,
             },
           ],
         };
@@ -1586,7 +1682,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(messages, null, 2),
+              text: ResponseFormatter.formatThreadMessages(messages, 12),
             },
           ],
         };
@@ -1603,7 +1699,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(threads, null, 2),
+              text: `🧵 Thread List (${validatedArgs.type}):\n${ResponseFormatter.formatMessages(threads, 8)}`,
             },
           ],
         };
@@ -1659,7 +1755,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(counters, null, 2),
+              text: ResponseFormatter.formatCounters(counters),
             },
           ],
         };
@@ -1671,7 +1767,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(serverInfo, null, 2),
+              text: ResponseFormatter.formatServerInfo(serverInfo),
             },
           ],
         };
@@ -1700,7 +1796,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify(presence, null, 2),
+              text: ResponseFormatter.formatPresence(presence),
             },
           ],
         };
@@ -1932,7 +2028,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: `Server Statistics:\n${JSON.stringify(result, null, 2)}`,
+              text: ResponseFormatter.formatServerStatistics(result),
             },
           ],
         };
