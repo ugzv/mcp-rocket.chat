@@ -475,40 +475,6 @@ export class RocketChatClient {
     return result.messages || [];
   }
 
-  // Integration management
-  async createWebhook(webhookData: {
-    type: 'webhook-incoming' | 'webhook-outgoing';
-    name: string;
-    enabled?: boolean;
-    username?: string;
-    urls?: string[];
-    channel?: string;
-    alias?: string;
-    avatar?: string;
-    emoji?: string;
-    triggerWords?: string[];
-    event?: string;
-  }) {
-    return this.request('/integrations.create', {
-      method: 'POST',
-      body: JSON.stringify(webhookData),
-    });
-  }
-
-  async listIntegrations(offset: number = 0, count: number = 50) {
-    const result = await this.request(`/integrations.list?offset=${offset}&count=${count}`);
-    return result.integrations || [];
-  }
-
-  async deleteIntegration(type: 'webhook-incoming' | 'webhook-outgoing', integrationId: string) {
-    return this.request('/integrations.remove', {
-      method: 'DELETE',
-      body: JSON.stringify({
-        type,
-        integrationId,
-      }),
-    });
-  }
 
   // User presence and status
   async getUserPresence(userId: string) {
@@ -718,38 +684,6 @@ export class RocketChatClient {
     });
   }
 
-  async validateFileType(filePath: string, allowedTypes?: string[], maxSize?: number) {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
-    }
-
-    const stats = fs.statSync(filePath);
-    const mimeType = mimeTypes.lookup(filePath);
-    
-    if (!mimeType) {
-      throw new Error('Unable to determine file type');
-    }
-
-    // Check allowed types
-    if (allowedTypes && !allowedTypes.includes(mimeType)) {
-      throw new Error(`File type ${mimeType} not allowed. Allowed types: ${allowedTypes.join(', ')}`);
-    }
-
-    // Check file size (default 100MB)
-    const defaultMaxSize = 100 * 1024 * 1024; // 100MB
-    const sizeLimit = maxSize || defaultMaxSize;
-    
-    if (stats.size > sizeLimit) {
-      throw new Error(`File size (${stats.size} bytes) exceeds maximum of ${sizeLimit} bytes`);
-    }
-
-    return {
-      valid: true,
-      size: stats.size,
-      mimeType,
-      fileName: path.basename(filePath)
-    };
-  }
 
   async sendMessageWithAttachment(channel: string, text: string, filePath: string, threadId?: string) {
     // Get room ID first
@@ -853,78 +787,6 @@ export class RocketChatClient {
     }
   }
 
-  async globalSearch(options: {
-    query: string;
-    searchType?: 'messages' | 'rooms' | 'users' | 'all';
-    limit?: number;
-  }) {
-    const results: any = {
-      success: true,
-      query: options.query,
-      results: {
-        messages: [],
-        rooms: [],
-        users: []
-      },
-      totals: {
-        messages: 0,
-        rooms: 0,
-        users: 0
-      }
-    };
-
-    try {
-      // Search messages globally (across accessible rooms)
-      if (options.searchType === 'messages' || options.searchType === 'all') {
-        try {
-          const messageSearch = await this.request(`/chat.search?searchText=${encodeURIComponent(options.query)}&count=${options.limit || 50}`);
-          results.results.messages = messageSearch.messages || [];
-          results.totals.messages = results.results.messages.length;
-        } catch (error) {
-          console.warn('Global message search failed:', error);
-        }
-      }
-
-      // Search rooms
-      if (options.searchType === 'rooms' || options.searchType === 'all') {
-        try {
-          const rooms = await this.listChannels();
-          const filteredRooms = rooms.filter((room: any) => 
-            room.name?.toLowerCase().includes(options.query.toLowerCase()) ||
-            room.topic?.toLowerCase().includes(options.query.toLowerCase()) ||
-            room.description?.toLowerCase().includes(options.query.toLowerCase())
-          ).slice(0, options.limit || 20);
-          
-          results.results.rooms = filteredRooms;
-          results.totals.rooms = filteredRooms.length;
-        } catch (error) {
-          console.warn('Room search failed:', error);
-        }
-      }
-
-      // Search users (if we have access)
-      if (options.searchType === 'users' || options.searchType === 'all') {
-        try {
-          // This would require admin privileges in most cases
-          const userSearch = await this.request(`/users.list?query={"name":{"$regex":"${options.query}","$options":"i"}}&count=${options.limit || 20}`);
-          results.results.users = userSearch.users || [];
-          results.totals.users = results.results.users.length;
-        } catch (error) {
-          console.warn('User search failed (may require admin privileges):', error);
-        }
-      }
-
-      return results;
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message,
-        query: options.query,
-        results: { messages: [], rooms: [], users: [] },
-        totals: { messages: 0, rooms: 0, users: 0 }
-      };
-    }
-  }
 
   // Analytics and insights functionality
   async getServerStatistics() {

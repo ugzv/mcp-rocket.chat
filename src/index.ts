@@ -149,29 +149,6 @@ class ResponseFormatter {
     return `${name} ${username} ${status}`.trim();
   }
 
-  static formatGlobalSearchResults(result: any): string {
-    const { query, totals, results } = result;
-    
-    let output = `Global Search: "${query}"\n`;
-    output += `Results: ${totals.messages} messages, ${totals.rooms} rooms, ${totals.users} users\n\n`;
-    
-    if (results.messages?.length > 0) {
-      output += `📝 Messages (${totals.messages}):\n`;
-      output += this.formatMessages(results.messages, 3) + '\n\n';
-    }
-    
-    if (results.rooms?.length > 0) {
-      output += `🏠 Rooms (${totals.rooms}):\n`;
-      output += results.rooms.slice(0, 5).map((room: any) => `• ${this.formatRoom(room)}`).join('\n') + '\n\n';
-    }
-    
-    if (results.users?.length > 0) {
-      output += `👤 Users (${totals.users}):\n`;
-      output += results.users.slice(0, 5).map((user: any) => `• ${this.formatUser(user)}`).join('\n') + '\n';
-    }
-    
-    return output;
-  }
 
   static formatAnalytics(analytics: any): string {
     if (!analytics.success) {
@@ -585,11 +562,6 @@ const advancedSearchSchema = z.object({
   offset: z.number().default(0).describe('Number of results to skip'),
 });
 
-const globalSearchSchema = z.object({
-  query: z.string().describe('Global search query'),
-  searchType: z.enum(['messages', 'rooms', 'users', 'all']).default('all').describe('Type of content to search'),
-  limit: z.number().default(50).describe('Maximum number of results per type'),
-});
 
 const getRoomAnalyticsSchema = z.object({
   roomId: z.string().describe('Room ID to analyze'),
@@ -1207,24 +1179,6 @@ const tools: Tool[] = [
     },
   },
   {
-    name: 'global_search',
-    description: 'Search across all accessible content (messages, rooms, users)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Global search query' },
-        searchType: { 
-          type: 'string', 
-          enum: ['messages', 'rooms', 'users', 'all'],
-          description: 'Type of content to search',
-          default: 'all'
-        },
-        limit: { type: 'number', description: 'Maximum number of results per type', default: 50 },
-      },
-      required: ['query'],
-    },
-  },
-  {
     name: 'get_server_statistics',
     description: 'Get comprehensive server statistics and usage metrics',
     inputSchema: {
@@ -1805,15 +1759,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'upload_file': {
         const validatedArgs = uploadFileSchema.parse(args);
         
-        // Validate file if restrictions are provided
-        if (validatedArgs.allowedTypes || validatedArgs.maxSize) {
-          await rocketChat.validateFileType(
-            validatedArgs.filePath, 
-            validatedArgs.allowedTypes, 
-            validatedArgs.maxSize
-          );
-        }
-        
         const result = await rocketChat.uploadFile(
           validatedArgs.roomId,
           validatedArgs.filePath,
@@ -1862,14 +1807,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'upload_image': {
         const validatedArgs = uploadImageSchema.parse(args);
-        
-        // Validate it's an image file
-        const imageTypes = [
-          'image/jpeg', 'image/png', 'image/gif', 'image/webp', 
-          'image/svg+xml', 'image/bmp', 'image/tiff'
-        ];
-        
-        await rocketChat.validateFileType(validatedArgs.imagePath, imageTypes);
         
         let analysisText = validatedArgs.description || '';
         
@@ -2003,23 +1940,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case 'global_search': {
-        const validatedArgs = globalSearchSchema.parse(args);
-        const result = await rocketChat.globalSearch({
-          query: validatedArgs.query,
-          searchType: validatedArgs.searchType,
-          limit: validatedArgs.limit
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: ResponseFormatter.formatGlobalSearchResults(result),
-            },
-          ],
-        };
-      }
 
       case 'get_server_statistics': {
         const result = await rocketChat.getServerStatistics();
