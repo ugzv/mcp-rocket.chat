@@ -111,26 +111,38 @@ export class RocketChatClient {
   }
 
   async searchMessages(query: string, roomId?: string, count: number = 20) {
-    if (!roomId) {
-      throw new Error('roomId is required for message search');
-    }
-
-    // Many servers disable chat.search endpoint, so we use fallback approach as primary method
-    console.warn('Using fallback search method - fetching recent messages and filtering locally');
-    
-    try {
-      // Primary method: Get recent messages and filter locally (more reliable)
-      const searchCount = Math.min(count * 5, 200); // Get more messages to search through
-      const recentMessages = await this.getMessages(roomId, searchCount);
-      const filtered = recentMessages.filter((msg: any) => 
-        msg.msg && msg.msg.toLowerCase().includes(query.toLowerCase())
-      );
-      return filtered.slice(0, count);
-    } catch (fallbackError: any) {
-      // Last resort: Try the direct search API if fallback fails
+    // If roomId is provided, search within that room
+    if (roomId) {
+      // Many servers disable chat.search endpoint, so we use fallback approach as primary method
+      console.warn('Using fallback search method - fetching recent messages and filtering locally');
+      
+      try {
+        // Primary method: Get recent messages and filter locally (more reliable)
+        const searchCount = Math.min(count * 5, 200); // Get more messages to search through
+        const recentMessages = await this.getMessages(roomId, searchCount);
+        const filtered = recentMessages.filter((msg: any) => 
+          msg.msg && msg.msg.toLowerCase().includes(query.toLowerCase())
+        );
+        return filtered.slice(0, count);
+      } catch (fallbackError: any) {
+        // Last resort: Try the direct search API if fallback fails
+        try {
+          const params = new URLSearchParams({
+            roomId: roomId,
+            searchText: query,
+            count: count.toString(),
+          });
+          
+          const result = await this.request(`/chat.search?${params}`);
+          return result.messages || [];
+        } catch (searchError: any) {
+          throw new Error(`Search failed: ${fallbackError.message}. Direct search also failed: ${searchError.message}`);
+        }
+      }
+    } else {
+      // Global search without room restriction
       try {
         const params = new URLSearchParams({
-          roomId: roomId,
           searchText: query,
           count: count.toString(),
         });
@@ -138,7 +150,35 @@ export class RocketChatClient {
         const result = await this.request(`/chat.search?${params}`);
         return result.messages || [];
       } catch (searchError: any) {
-        throw new Error(`Search failed: ${fallbackError.message}. Direct search also failed: ${searchError.message}`);
+        // If global search fails, try searching across accessible rooms
+        try {
+          console.warn('Global search failed, trying to search across accessible rooms');
+          const rooms = await this.listChannels();
+          let allMessages: any[] = [];
+          
+          // Search through first few accessible rooms
+          for (const room of rooms.slice(0, 5)) {
+            try {
+              const roomMessages = await this.getMessages(room._id, Math.max(20, Math.floor(count / 5)));
+              const filtered = roomMessages.filter((msg: any) => 
+                msg.msg && msg.msg.toLowerCase().includes(query.toLowerCase())
+              );
+              allMessages = allMessages.concat(filtered);
+              
+              // Stop if we have enough results
+              if (allMessages.length >= count) break;
+            } catch (roomError) {
+              // Skip rooms we can't access
+              continue;
+            }
+          }
+          
+          // Sort by timestamp (newest first) and limit results
+          allMessages.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+          return allMessages.slice(0, count);
+        } catch (fallbackError: any) {
+          throw new Error(`Search failed: ${searchError.message}. Room-based fallback also failed: ${fallbackError.message}`);
+        }
       }
     }
   }
